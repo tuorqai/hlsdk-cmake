@@ -43,4 +43,10 @@
 
 #define WEAPON_SUIT			31
 
+
+// all occurrences of min() and max() are replaced by _min() and _max()
+
+#define _min(a,b)  (((a) < (b)) ? (a) : (b))
+#define _max(a,b)  (((a) > (b)) ? (a) : (b))
+
 #endif

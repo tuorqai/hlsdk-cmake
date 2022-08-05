@@ -1,6 +1,4 @@
 
-# TODO: make this work on Windows/MSVC
-
 cmake_minimum_required(VERSION 3.18)
 project(HalfLifeSDK C CXX)
 
@@ -9,11 +7,20 @@ project(HalfLifeSDK C CXX)
 
 set(CMAKE_C_STANDARD 90)
 set(CMAKE_CXX_STANDARD 98)
+
+# GCC exports all symbols by default, but Half-Life SDK exports them manually.
+# Therefore, a symbol should be hidden by default, not exported.
 set(CMAKE_C_VISIBILITY_PRESET hidden)
 set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+
+# On Linux, rpath should be avoided, otherwise client.so will be malformed:
+# it will be linked to "some_path/vgui.so" instead of just "vgui.so".
+# On Windows this doesn't matter.
 set(CMAKE_SKIP_RPATH YES)
 
 include_directories(common dlls engine game_shared pm_shared public)
+
+# Most of this definitions are not used.
 add_compile_definitions(CLIENT_WEAPONS HL1 NDEBUG NO_MALLOC_OVERRIDE QUAKE2 QUIVER VALVE_DLL)
 
 #-------------------------------------------------------------------------------
@@ -31,11 +38,14 @@ endif()
 # Compiler-dependent options
 
 if(NOT MSVC)
+    # Force 32-bit build on 64-bit environments.
     if(CMAKE_SIZEOF_VOID_P EQUAL 8)
         add_compile_options(-m32)
         add_link_options(-m32)
     endif()
 
+    # Relax C++ rules a bit and disable a lot of annoying warnings.
+    # Don't try this at home!
     add_compile_options(
         $<$<COMPILE_LANGUAGE:CXX>:-fpermissive>
         $<$<COMPILE_LANGUAGE:CXX>:-fno-strict-aliasing>
@@ -46,9 +56,13 @@ if(NOT MSVC)
         -Wno-write-strings
         -Wno-format-overflow
         -Wno-format-security
-        -Wno-endif-labels
-        -g -gdwarf-2)
+        -Wno-endif-labels)
+    
+    # Include debug information in DWARF format.
+    add_compile_options(-g -gdwarf-2)
 
+    # These function redefinitions should be fixed in the source code,
+    # not here.
     add_compile_definitions(GNUC _alloca=alloca
         _snprintf=snprintf _vsnprintf=vsnprintf
         stricmp=strcasecmp strnicmp=strncasecmp)
@@ -162,6 +176,19 @@ add_library(hl SHARED
     "pm_shared/pm_shared.c")
 
 set_target_properties(hl PROPERTIES PREFIX "")
+
+# The engine requires GiveFnptrsToDll() function to have an ordinal #1.
+# I'm certainly not a very experienced Windows developer and had no idea
+# about this stuff before.
+# Anyway, the only way to manually set an ordinal number is to use .def
+# file when linking. Otherwise, the ordinal number will be picked automatically
+# by the linker and GiveFnptrsToDll() will get some random number. As a result,
+# the engine will not be able to load the server-side DLL.
+
+if(WIN32 AND MSVC)
+    # MSVC? But can we use any other compiler at all?
+    target_link_options(hl PRIVATE "/def:${CMAKE_SOURCE_DIR}\\dlls\\hl.def")
+endif()
 
 #-------------------------------------------------------------------------------
 # Client-side library
@@ -296,10 +323,10 @@ add_library(client SHARED
 
 set_target_properties(client PROPERTIES PREFIX "")
 
-target_compile_definitions(client PRIVATE
-    CLIENT_DLL
-    DISABLE_JUMP_ORIGIN
-    DISABLE_VEC_ORIGIN
-    HL_DLL)
+target_compile_definitions(client PRIVATE CLIENT_DLL HL_DLL)
+
+if(NOT WIN32)
+    target_compile_definitions(client PRIVATE DISABLE_JUMP_ORIGIN DISABLE_VEC_ORIGIN)
+endif()
 
 target_link_libraries(client PRIVATE client_sys SDL2 vgui)
